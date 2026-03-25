@@ -1,6 +1,13 @@
+# Activa el motor de reescritura de URLs de Apache
 RewriteEngine On
+
+# Base de este nivel: ya estamos dentro de public/
 RewriteBase /prog3-clase2/public/
 
+# Si lo que se pidió NO es un archivo real que existe en disco...
 RewriteCond %{REQUEST_FILENAME} !-f
+# ...Y tampoco es una carpeta real que existe en disco...
 RewriteCond %{REQUEST_FILENAME} !-d
+# ...entonces mandar TODO a index.php para que PHP maneje la ruta
+# Esto permite URLs limpias como /health en vez de /health.php
 RewriteRule ^(.*)$ index.php [QSA,L]
