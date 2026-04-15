@@ -1,72 +1,102 @@
 <?php
-declare(strict_types=1); // Modo estricto de tipos en PHP
+// =============================================================================
+// public/index.php — Punto de entrada único de la aplicación
+// =============================================================================
+// Todo request llega acá gracias al .htaccess.
+// Este archivo SOLO hace tres cosas:
+//   1. Carga dependencias (DB, modelos, validadores)
+//   2. Limpia y normaliza la URI
+//   3. Despacha a la ruta correcta
+//
+// NO valida datos. NO consulta la DB. NO arma respuestas.
+// Esa lógica vive en src/routes/ y src/validators/.
+// =============================================================================
 
-// Leer el método HTTP del request (GET, POST, PUT, DELETE, etc.)
-// Si no existe por algún motivo, asumir GET
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+declare(strict_types=1);
 
-// Leer la URL completa que pidió el navegador
-// Ej: /prog3-clase2/public/health?foo=bar
-$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+// =============================================================================
+// CARGA DE DEPENDENCIAS
+// =============================================================================
 
-// Sacar solo el path, sin query string (?foo=bar)
-// Resultado: /prog3-clase2/public/health
-$path = parse_url($requestUri, PHP_URL_PATH);
+// NUEVO en Clase 6: conexión a MySQL vía Eloquent
+// Debe ser lo primero — todo lo demás depende de la conexión.
+require_once __DIR__ . '/../config/db.php';
 
-// Estas dos líneas las dejó el profe pero no se usan en esta versión
-// $scriptName sería algo como /prog3-clase2/public/index.php
-// $scriptDir sería /prog3-clase2/public
+// NUEVO en Clase 6: modelo Item (mapea la tabla items de MySQL)
+require_once __DIR__ . '/../models/Item.php';
+
+// Viene de Clase 3/4: validador separado de la lógica de rutas
+require_once __DIR__ . '/../src/validators/ItemValidator.php';
+
+// =============================================================================
+// LEER Y LIMPIAR LA PETICIÓN HTTP
+// =============================================================================
+
+$method     = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$requestUri = $_SERVER['REQUEST_URI']    ?? '/';
+$path       = parse_url($requestUri, PHP_URL_PATH);
+
 $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
 $scriptDir  = str_replace('\\', '/', dirname($scriptName));
 
-// Limpiar el path sacando el prefijo del proyecto
-// Si llega /prog3-clase2/public/health → queda /health
-// Si llega /prog3-clase2/health → queda /health
-// El (/public)? significa que /public es opcional
+// Limpiar prefijo del proyecto: /prog3-clase2/public/items → /items
 $path = preg_replace('#^/prog3-clase2(/public)?#', '', $path);
-
-// Asegurar que el path siempre empiece con /
-// ltrim saca las barras del inicio, después le agregamos una sola
 $path = '/' . ltrim((string)$path, '/');
+if ($path === '//') $path = '/';
 
-// Caso borde: si quedó // convertirlo a /
-if ($path === '//') {
-    $path = '/';
-}
+// =============================================================================
+// DESPACHO DE RUTAS
+// =============================================================================
 
-// ---- RUTAS ----
-
-// Ruta GET /health
-// Devuelve información del servidor en JSON - sirve para verificar que la API está viva
+// ----------------------------------------------------------------------------
+// Ruta: GET /health — Estado del servidor (Clase 2, sin cambios)
+// ----------------------------------------------------------------------------
 if ($method === 'GET' && $path === '/health') {
-    header('Content-Type: application/json; charset=utf-8'); // Decirle al navegador que es JSON
-    http_response_code(200); // 200 = OK
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(200);
     echo json_encode([
         'status'      => 'ok',
-        'timestamp'   => date('Y-m-d H:i:s'), // Fecha y hora actual del servidor
-        'php_version' => phpversion(),          // Versión de PHP instalada
-        'server'      => $_SERVER['SERVER_SOFTWARE'] ?? 'Apache' // Info del servidor web
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES); // Pretty print = JSON indentado y legible
-    exit; // Parar ejecución, no seguir evaluando rutas
+        'timestamp'   => date('Y-m-d H:i:s'),
+        'php_version' => phpversion(),
+        'server'      => $_SERVER['SERVER_SOFTWARE'] ?? 'Apache'
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    exit;
 }
 
-// Ruta GET / (raíz)
-// Devuelve un mensaje básico indicando que la API funciona
+// ----------------------------------------------------------------------------
+// Ruta: GET / — Raíz (Clase 2, actualizada con nuevas rutas)
+// ----------------------------------------------------------------------------
 if ($method === 'GET' && $path === '/') {
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(200);
     echo json_encode([
         'message' => 'API funcionando',
-        'health'  => '/health' // Le avisa al usuario que existe el endpoint /health
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        'rutas'   => [
+            'GET  /health'     => 'Estado del servidor',
+            'GET  /items/new'  => 'Formulario para crear item',
+            'GET  /items'      => 'Listar todos los items',
+            'POST /items'      => 'Crear un item nuevo',
+        ]
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// Si ninguna ruta coincidió, devolver 404 Not Found
-// Incluye el path que se intentó para facilitar el debugging
+// ----------------------------------------------------------------------------
+// Rutas: /items/* — Delegamos a src/routes/items.php
+// ----------------------------------------------------------------------------
+// El router no sabe nada de items. Solo detecta el prefijo y delega.
+// Dentro de items.php, $method y $path siguen disponibles.
+if (str_starts_with($path, '/items')) {
+    require __DIR__ . '/../src/routes/items.php';
+    exit;
+}
+
+// ----------------------------------------------------------------------------
+// Fallback: 404 Not Found
+// ----------------------------------------------------------------------------
 header('Content-Type: application/json; charset=utf-8');
-http_response_code(404); // 404 = No encontrado
+http_response_code(404);
 echo json_encode([
     'error' => 'Not Found',
-    'path'  => $path // Muestra qué ruta se intentó acceder
+    'path'  => $path
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
